@@ -346,7 +346,7 @@
     align-items: center;
     gap: 6px;
     font-size: 14px;
-    color: var(--text-dim);
+    color: var(--accent);
     cursor: pointer;
     white-space: nowrap;
     user-select: none;
@@ -550,7 +550,7 @@
     sorted.forEach(a => {
       const t = document.createElement('span');
       t.className = 'alarm-tag' + (firingIds.has(a.id) ? ' firing' : '');
-      t.textContent = '⏰ ' + a.time;
+      t.textContent = '🔔 ' + a.time;
       tagsEl.appendChild(t);
     });
   }
