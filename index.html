@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>アラーム時計</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0f1e35;
+    --navy-light: #1e3a5f;
+    --accent: #4fc3f7;
+    --accent-dim: #1e6e96;
+    --alarm-red: #c62828;
+    --alarm-red-light: #ef5350;
+    --text: #cfe0f0;
+    --text-dim: #5d7fa0;
+    --panel-bg: rgba(12,22,40,0.98);
+    --border: rgba(79,195,247,0.18);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    min-height: 100vh;
+    background: var(--navy);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Noto Sans JP', sans-serif;
+    overflow: hidden;
+    transition: background 1.4s ease;
+    position: relative;
+  }
+  body.alarm-on { background: #1a0000; }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(79,195,247,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(79,195,247,0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+    transition: opacity 1.4s;
+  }
+  body.alarm-on::before { opacity: 0.25; }
+
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 3px,
+      rgba(0,0,0,0.07) 3px, rgba(0,0,0,0.07) 4px
+    );
+    pointer-events: none;
+  }
+
+  /* gear */
+  #gear-btn {
+    position: fixed;
+    top: 20px; right: 24px;
+    width: 44px; height: 44px;
+    background: transparent;
+    border: 1.5px solid var(--border);
+    border-radius: 50%;
+    color: var(--text-dim);
+    font-size: 20px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: color 0.25s, border-color 0.25s, transform 0.45s;
+    z-index: 100;
+  }
+  #gear-btn:hover { color: var(--accent); border-color: var(--accent); transform: rotate(60deg); }
+  body.alarm-on #gear-btn { color: #ef9a9a; border-color: rgba(239,83,80,0.4); }
+
+  /* clock */
+  #clock-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    position: relative;
+    z-index: 1;
+  }
+
+  #time-display {
+    font-family: 'Share Tech Mono', 'Courier New', monospace;
+    font-size: clamp(68px, 13vw, 124px);
+    color: var(--accent);
+    letter-spacing: 0.06em;
+    line-height: 1;
+    text-shadow: 0 0 40px rgba(79,195,247,0.35), 0 0 80px rgba(79,195,247,0.1);
+    transition: color 0.6s, text-shadow 0.6s;
+    user-select: none;
+  }
+  body.alarm-on #time-display {
+    color: var(--alarm-red-light);
+    text-shadow: 0 0 40px rgba(239,83,80,0.5), 0 0 80px rgba(239,83,80,0.2);
+    animation: flicker 1s infinite alternate;
+  }
+  @keyframes flicker {
+    0%,82%,86%,92%,100% { opacity: 1; }
+    84%,88% { opacity: 0.82; }
+  }
+
+  #date-display {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 15px;
+    color: var(--text-dim);
+    letter-spacing: 0.18em;
+  }
+
+  #alarm-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    max-width: 520px;
+    min-height: 28px;
+  }
+  .alarm-tag {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 3px 10px;
+    letter-spacing: 0.1em;
+    transition: color 0.3s, border-color 0.3s;
+  }
+  .alarm-tag.firing {
+    color: var(--alarm-red-light);
+    border-color: rgba(239,83,80,0.5);
+    animation: tag-blink 0.65s infinite alternate;
+  }
+  @keyframes tag-blink { from { opacity: 1; } to { opacity: 0.35; } }
+
+  #stop-btn {
+    margin-top: 8px;
+    padding: 13px 56px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 15px;
+    letter-spacing: 0.18em;
+    border-radius: 3px;
+    border: 1.5px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    opacity: 0.28;
+    pointer-events: none;
+    transition: all 0.4s;
+  }
+  #stop-btn.active {
+    opacity: 1;
+    pointer-events: auto;
+    color: var(--alarm-red-light);
+    border-color: var(--alarm-red-light);
+    animation: pulse-btn 1.1s infinite alternate;
+  }
+  #stop-btn.stopped {
+    opacity: 0.4;
+    pointer-events: none;
+    color: var(--text-dim);
+    border-color: var(--border);
+    animation: none;
+  }
+  @keyframes pulse-btn {
+    from { box-shadow: 0 0 8px rgba(239,83,80,0.15); }
+    to   { box-shadow: 0 0 28px rgba(239,83,80,0.55); }
+  }
+
+  /* overlay */
+  #overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(4,10,20,0.85);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(5px);
+  }
+  #overlay.open { display: flex; }
+
+  #settings-panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    width: min(460px, 92vw);
+    padding: 26px 26px 22px;
+    position: relative;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.75);
+  }
+
+  #panel-title {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.22em;
+    color: var(--accent);
+    margin-bottom: 20px;
+  }
+
+  #close-btn {
+    position: absolute;
+    top: 16px; right: 18px;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 20px;
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.2s;
+    padding: 4px;
+  }
+  #close-btn:hover { color: var(--text); }
+
+  #alarm-list {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    margin-bottom: 14px;
+    max-height: 360px;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+  #alarm-list::-webkit-scrollbar { width: 4px; }
+  #alarm-list::-webkit-scrollbar-track { background: transparent; }
+  #alarm-list::-webkit-scrollbar-thumb { background: var(--accent-dim); border-radius: 2px; }
+
+  .alarm-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--navy-light);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 14px;
+    animation: row-in 0.18s ease;
+  }
+  @keyframes row-in {
+    from { opacity: 0; transform: translateY(-5px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .alarm-row input[type="time"] {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 22px;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    outline: none;
+    letter-spacing: 0.08em;
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+  }
+  .alarm-row input[type="time"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.6) sepia(1) saturate(2) hue-rotate(175deg);
+    cursor: pointer;
+  }
+
+  .alarm-row label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-dim);
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+    font-family: 'Share Tech Mono', monospace;
+    letter-spacing: 0.05em;
+  }
+  .alarm-row input[type="checkbox"] {
+    width: 15px; height: 15px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .del-btn {
+    background: none;
+    border: 1px solid rgba(239,83,80,0.22);
+    border-radius: 3px;
+    color: rgba(239,83,80,0.4);
+    font-size: 14px;
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+  .del-btn:hover { border-color: var(--alarm-red-light); color: var(--alarm-red-light); background: rgba(239,83,80,0.08); }
+
+  #add-btn {
+    width: 100%;
+    padding: 11px;
+    background: transparent;
+    border: 1px dashed var(--accent-dim);
+    border-radius: 4px;
+    color: var(--accent-dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  #add-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: rgba(79,195,247,0.05); }
+  #add-btn:disabled { opacity: 0.28; cursor: not-allowed; }
+
+  #limit-note {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: right;
+    margin-top: 8px;
+    letter-spacing: 0.06em;
+  }
+</style>
+</head>
+<body>
+
+<button id="gear-btn" aria-label="設定を開く">⚙</button>
+
+<div id="clock-wrap">
+  <div id="time-display">00:00:00</div>
+  <div id="date-display">---</div>
+  <div id="alarm-tags"></div>
+  <button id="stop-btn">■ STOP ALARM</button>
+</div>
+
+<div id="overlay" role="dialog" aria-modal="true" aria-label="アラーム設定">
+  <div id="settings-panel">
+    <div id="panel-title">▸ ALARM SETTINGS</div>
+    <button id="close-btn" aria-label="閉じる">✕</button>
+    <div id="alarm-list"></div>
+    <button id="add-btn">＋ アラームを追加</button>
+    <div id="limit-note"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const MAX = 10;
+  const DAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+
+  let alarms = [{ id: 1, time: '10:20', enabled: true }];
+  let nextId = 2;
+  let firingIds = new Set();
+  let stoppedIds = new Set(); // 手動停止済み（同分内は再発火しない）
+  let audioCtx = null;
+  let beepTimer = null;
+  let alarmActive = false;
+
+  const body = document.body;
+  const display = document.getElementById('time-display');
+  const dateEl = document.getElementById('date-display');
+  const tagsEl = document.getElementById('alarm-tags');
+  const stopBtn = document.getElementById('stop-btn');
+  const gearBtn = document.getElementById('gear-btn');
+  const overlay = document.getElementById('overlay');
+  const alarmList = document.getElementById('alarm-list');
+  const addBtn = document.getElementById('add-btn');
+  const limitNote = document.getElementById('limit-note');
+
+  function pad(n) { return String(n).padStart(2,'0'); }
+
+  function tick() {
+    const now = new Date();
+    const h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
+    display.textContent = pad(h) + ':' + pad(m) + ':' + pad(s);
+    const d = now.getDay(), mo = now.getMonth(), da = now.getDate();
+    dateEl.textContent = DAYS[d] + '  ' + MONTHS[mo] + ' ' + pad(da);
+
+    const hhmm = pad(h) + ':' + pad(m);
+    let newFire = false;
+    alarms.forEach(a => {
+      if (a.enabled && a.time === hhmm && !firingIds.has(a.id) && !stoppedIds.has(a.id)) {
+        firingIds.add(a.id); newFire = true;
+      }
+    });
+    if (newFire && !alarmActive) startAlarm();
+
+    // 分が変わったアラームはfiringIds・stoppedIdsから除去
+    firingIds.forEach(id => {
+      const a = alarms.find(x => x.id === id);
+      if (!a || a.time !== hhmm) firingIds.delete(id);
+    });
+    stoppedIds.forEach(id => {
+      const a = alarms.find(x => x.id === id);
+      if (!a || a.time !== hhmm) stoppedIds.delete(id);
+    });
+    if (firingIds.size === 0 && alarmActive) stopAlarm(true);
+
+    renderTags();
+  }
+
+  function startAlarm() {
+    alarmActive = true;
+    body.classList.add('alarm-on');
+    stopBtn.classList.add('active');
+    stopBtn.classList.remove('stopped');
+    doBeep();
+  }
+
+  function stopAlarm(auto) {
+    alarmActive = false;
+    clearTimeout(beepTimer);
+    beepTimer = null;
+    if (audioCtx) {
+      try { audioCtx.close(); } catch(e) {}
+      audioCtx = null;
+    }
+    body.classList.remove('alarm-on');
+    stopBtn.classList.remove('active');
+    if (!auto) { stopBtn.classList.add('stopped'); setTimeout(() => stopBtn.classList.remove('stopped'), 3000); }
+  }
+
+  function doBeep() {
+    if (!alarmActive) return;
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = audioCtx;
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.setValueAtTime(660, ctx.currentTime + 0.12);
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.24);
+      g.gain.setValueAtTime(0.28, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
+      osc.connect(g); g.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.55);
+      osc.onended = () => {
+        if (!alarmActive) return;
+        beepTimer = setTimeout(doBeep, 350);
+      };
+    } catch(e) {}
+  }
+
+  stopBtn.addEventListener('click', () => {
+    if (!stopBtn.classList.contains('active')) return;
+    firingIds.forEach(id => stoppedIds.add(id));
+    firingIds.clear();
+    stopAlarm(false);
+  });
+
+  function renderTags() {
+    tagsEl.innerHTML = '';
+    alarms.filter(a => a.enabled).forEach(a => {
+      const t = document.createElement('span');
+      t.className = 'alarm-tag' + (firingIds.has(a.id) ? ' firing' : '');
+      t.textContent = '⏰ ' + a.time;
+      tagsEl.appendChild(t);
+    });
+  }
+
+  gearBtn.addEventListener('click', () => { overlay.classList.add('open'); renderList(); });
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('open'); });
+  document.getElementById('close-btn').addEventListener('click', () => overlay.classList.remove('open'));
+
+  function renderList() {
+    alarmList.innerHTML = '';
+    alarms.forEach(a => {
+      const row = document.createElement('div');
+      row.className = 'alarm-row';
+
+      const inp = document.createElement('input');
+      inp.type = 'time';
+      inp.value = a.time;
+      inp.addEventListener('change', () => { a.time = inp.value; firingIds.delete(a.id); renderTags(); });
+
+      const uid = 'chk-' + a.id;
+      const chk = document.createElement('input');
+      chk.type = 'checkbox'; chk.id = uid; chk.checked = a.enabled;
+      chk.addEventListener('change', () => { a.enabled = chk.checked; if (!a.enabled) firingIds.delete(a.id); renderTags(); });
+
+      const lbl = document.createElement('label');
+      lbl.htmlFor = uid;
+      lbl.appendChild(chk);
+      lbl.append(' ON');
+
+      const del = document.createElement('button');
+      del.className = 'del-btn'; del.title = '削除'; del.textContent = '✕';
+      del.addEventListener('click', () => {
+        alarms = alarms.filter(x => x.id !== a.id);
+        firingIds.delete(a.id);
+        renderList(); renderTags();
+      });
+
+      row.appendChild(inp); row.appendChild(lbl); row.appendChild(del);
+      alarmList.appendChild(row);
+    });
+
+    addBtn.disabled = alarms.length >= MAX;
+    limitNote.textContent = alarms.length + ' / ' + MAX;
+  }
+
+  addBtn.addEventListener('click', () => {
+    if (alarms.length >= MAX) return;
+    alarms.push({ id: nextId++, time: '07:00', enabled: true });
+    renderList(); renderTags();
+    alarmList.scrollTop = alarmList.scrollHeight;
+  });
+
+  renderTags(); tick();
+  setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>
