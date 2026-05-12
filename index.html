@@ -199,7 +199,61 @@
     to   { box-shadow: 0 0 28px rgba(239,83,80,0.55); }
   }
 
-  /* overlay */
+  /* 浮遊パーティクル */
+  .particle {
+    position: fixed;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+    animation: float-particle linear infinite;
+  }
+  @keyframes float-particle {
+    0%   { transform: translate(0, 0) scale(1); opacity: 0; }
+    10%  { opacity: 1; }
+    90%  { opacity: 0.5; }
+    100% { transform: translate(var(--tx), var(--ty)) scale(0.3); opacity: 0; }
+  }
+
+  /* 流れ星 */
+  .star-outer {
+    position: fixed;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .star-inner {
+    position: relative;
+    width: 4px; height: 4px;
+    animation: shoot-move linear forwards;
+    opacity: 0;
+  }
+  .star-inner::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.7);
+    box-shadow: 0 0 6px 2px rgba(255,240,180,0.55);
+  }
+  .star-inner::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    transform: translateY(-50%);
+    width: var(--tail-len);
+    height: 1.5px;
+    background: linear-gradient(to left, rgba(255,240,180,0.5), transparent);
+    border-radius: 1px;
+  }
+  @keyframes shoot-move {
+    0%   { opacity: 0;   transform: translate(0, 0); }
+    6%   { opacity: 1; }
+    85%  { opacity: 0.9; }
+    100% { opacity: 0;   transform: translate(var(--dist), 0); }
+  }
+
   #overlay {
     display: none;
     position: fixed; inset: 0;
@@ -210,7 +264,7 @@
   #overlay.open { display: flex; }
 
   #settings-panel {
-    background: rgba(255,255,255,0.07);
+    background: rgba(20,45,75,0.88);
     backdrop-filter: blur(16px);
     border: 1px solid rgba(255,255,255,0.2);
     border-radius: 10px;
@@ -548,6 +602,93 @@
     renderList(); renderTags();
     alarmList.scrollTop = alarmList.scrollHeight;
   });
+
+  // 浮遊する光の粒
+  (function() {
+    const COLORS = [
+      'rgba(79,195,247,VAL)',   // 水色
+      'rgba(255,238,100,VAL)',  // 蛍光イエロー
+      'rgba(255,255,255,VAL)',  // 白
+      'rgba(180,220,255,VAL)',  // 薄青
+    ];
+    const COUNT = 28;
+
+    for (let i = 0; i < COUNT; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+
+      const size = 3 + Math.random() * 4.5;
+      const x = Math.random() * 100;
+      const y = Math.random() * 100;
+      const dur = 8 + Math.random() * 14;
+      const delay = -(Math.random() * dur);
+      const tx = (Math.random() - 0.5) * 80;
+      const ty = -(40 + Math.random() * 80);
+      const col = COLORS[Math.floor(Math.random() * COLORS.length)];
+      const alpha = 0.4 + Math.random() * 0.5;
+
+      p.style.cssText = `
+        width: ${size}px;
+        height: ${size}px;
+        left: ${x}vw;
+        top: ${y}vh;
+        background: ${col.replace('VAL', alpha)};
+        box-shadow: 0 0 ${size * 2}px ${col.replace('VAL', alpha * 0.8)};
+        animation-duration: ${dur}s;
+        animation-delay: ${delay}s;
+        --tx: ${tx}px;
+        --ty: ${ty}px;
+      `;
+      document.body.appendChild(p);
+    }
+  })();
+
+  // 流れ星
+  (function() {
+    function launchStar() {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+
+      const angleDeg = 125 + Math.random() * 30;
+      const dist = vw * (0.45 + Math.random() * 0.35);
+      const tailLen = 80 + Math.random() * 80;
+      const duration = 900 + Math.random() * 600;
+
+      const startX = vw * 0.45 + Math.random() * vw * 0.5;
+      const startY = Math.random() * vh * 0.45;
+
+      // outer: 開始位置に固定 + rotate で進行方向を決める
+      const outer = document.createElement('div');
+      outer.className = 'star-outer';
+      outer.style.cssText = `
+        left: ${startX}px;
+        top: ${startY}px;
+        transform: rotate(${angleDeg}deg);
+      `;
+
+      // inner: outer内でX軸方向にtranslate（rotateで斜めになる）
+      const inner = document.createElement('div');
+      inner.className = 'star-inner';
+      inner.style.cssText = `
+        --dist: ${dist}px;
+        --tail-len: ${tailLen}px;
+        animation-duration: ${duration}ms;
+      `;
+
+      outer.appendChild(inner);
+      document.body.appendChild(outer);
+      setTimeout(() => outer.remove(), duration + 100);
+    }
+
+    function schedule() {
+      launchStar();
+      if (Math.random() < 0.2) {
+        setTimeout(launchStar, 300 + Math.random() * 400);
+      }
+      setTimeout(schedule, 10000 + Math.random() * 20000);
+    }
+    setTimeout(schedule, 2000 + Math.random() * 3000);
+  })();
 
   renderTags(); tick();
   setInterval(tick, 1000);
