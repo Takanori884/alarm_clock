@@ -123,6 +123,10 @@
     font-size: 16px;
     color: #7a9fc0;
     letter-spacing: 0.22em;
+    transition: color 0.6s;
+  }
+  body.alarm-on #date-display {
+    color: var(--alarm-red-light);
   }
 
   #alarm-tags {
@@ -153,7 +157,16 @@
     background: rgba(239,83,80,0.08);
     animation: tag-blink 0.65s infinite alternate;
   }
-  @keyframes tag-blink { from { opacity: 1; } to { opacity: 0.35; } }
+  @keyframes tag-blink {
+    from { opacity: 1; box-shadow: 0 0 8px rgba(239,83,80,0.5), inset 0 1px 0 rgba(255,255,255,0.12); }
+    to   { opacity: 0.4; box-shadow: 0 0 2px rgba(239,83,80,0.1), inset 0 1px 0 rgba(255,255,255,0.12); }
+  }
+  .alarm-tag.dimmed {
+    opacity: 0.35;
+  }
+  .alarm-tag.muted {
+    opacity: 0.3;
+  }
 
   #stop-btn {
     margin-top: 8px;
@@ -426,10 +439,16 @@
   const DAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
   const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 
-  let alarms = [{ id: 1, time: '10:20', enabled: true }];
-  let nextId = 2;
+  let alarms = [
+    { id: 1, time: '10:15', enabled: true },
+    { id: 2, time: '10:30', enabled: true }
+  ];
+  let nextId = 3;
+  // 表示用ソート済み配列（設定操作時のみ更新、アラーム発火・終了では変えない）
+  let sortedAlarms = [...alarms];
   let firingIds = new Set();
-  let stoppedIds = new Set(); // 手動停止済み（同分内は再発火しない）
+  let stoppedIds = new Set();     // 過去時刻判定（設定操作時にリセット・再判定）
+  let manuallyStopped = new Set(); // 手動停止済み（同分内は再発火しない）
   let audioCtx = null;
   let beepTimer = null;
   let alarmActive = false;
@@ -447,6 +466,29 @@
 
   function pad(n) { return String(n).padStart(2,'0'); }
 
+  // 設定操作時のみ呼ぶ：時刻の昇順にソート＋過去時刻をstoppedIdsに追加
+  function sortAlarms() {
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+    // stoppedIdsをリセットして再判定、manuallyStoppedも引き継ぐ
+    stoppedIds.clear();
+    alarms.forEach(a => {
+      if (!a.enabled) return;
+      const [h, m] = a.time.split(':').map(Number);
+      if ((h * 60 + m) < nowMins) stoppedIds.add(a.id);
+    });
+    // 手動停止済みも薄く表示を維持
+    manuallyStopped.forEach(id => stoppedIds.add(id));
+    sortedAlarms = alarms.filter(a => a.enabled).slice().sort((a, b) => {
+      const [ah, am] = a.time.split(':').map(Number);
+      const [bh, bm] = b.time.split(':').map(Number);
+      return (ah * 60 + am) - (bh * 60 + bm);
+    });
+    alarms.filter(a => !a.enabled).forEach(a => sortedAlarms.push(a));
+  }
+
+  let lastDate = new Date().getDate();
+
   function tick() {
     const now = new Date();
     const h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
@@ -454,23 +496,36 @@
     const d = now.getDay(), mo = now.getMonth(), da = now.getDate();
     dateEl.textContent = DAYS[d] + '  ' + MONTHS[mo] + ' ' + pad(da);
 
+    // 日付が変わったらstoppedIds・manuallyStoppedをリセット（タグを復活）
+    if (da !== lastDate) {
+      lastDate = da;
+      stoppedIds.clear();
+      manuallyStopped.clear();
+      sortAlarms();
+    }
+
     const hhmm = pad(h) + ':' + pad(m);
+
+    // 分が変わったらmanuallyStoppedから該当IDを除去
+    manuallyStopped.forEach(id => {
+      const a = alarms.find(x => x.id === id);
+      if (!a || a.time !== hhmm) manuallyStopped.delete(id);
+    });
+
     let newFire = false;
     alarms.forEach(a => {
-      if (a.enabled && a.time === hhmm && !firingIds.has(a.id) && !stoppedIds.has(a.id)) {
+      if (a.enabled && a.time === hhmm
+        && !firingIds.has(a.id)
+        && !manuallyStopped.has(a.id)) {
         firingIds.add(a.id); newFire = true;
       }
     });
     if (newFire && !alarmActive) startAlarm();
 
-    // 分が変わったアラームはfiringIds・stoppedIdsから除去
+    // 分が変わったアラームはfiringIdsから除去
     firingIds.forEach(id => {
       const a = alarms.find(x => x.id === id);
       if (!a || a.time !== hhmm) firingIds.delete(id);
-    });
-    stoppedIds.forEach(id => {
-      const a = alarms.find(x => x.id === id);
-      if (!a || a.time !== hhmm) stoppedIds.delete(id);
     });
     if (firingIds.size === 0 && alarmActive) stopAlarm(true);
 
@@ -523,33 +578,30 @@
 
   stopBtn.addEventListener('click', () => {
     if (!stopBtn.classList.contains('active')) return;
-    firingIds.forEach(id => stoppedIds.add(id));
+    firingIds.forEach(id => {
+      manuallyStopped.add(id); // 同分内の再発火を防ぐ
+      stoppedIds.add(id);      // タグを薄く表示
+    });
     firingIds.clear();
     stopAlarm(false);
   });
 
   function renderTags() {
     tagsEl.innerHTML = '';
-    const now = new Date();
-    const nowMins = now.getHours() * 60 + now.getMinutes();
+    const isAlarming = alarmActive;
 
-    const sorted = alarms
-      .filter(a => a.enabled)
-      .slice()
-      .sort((a, b) => {
-        const [ah, am] = a.time.split(':').map(Number);
-        const [bh, bm] = b.time.split(':').map(Number);
-        const am2 = ah * 60 + am;
-        const bm2 = bh * 60 + bm;
-        // 現在時刻以降を前に、それ以前を後ろに（翌日扱い）
-        const aOff = am2 >= nowMins ? am2 : am2 + 1440;
-        const bOff = bm2 >= nowMins ? bm2 : bm2 + 1440;
-        return aOff - bOff;
-      });
+    sortedAlarms.forEach(a => {
+      if (!a.enabled) return;
+      const isFiring  = firingIds.has(a.id);
+      const isStopped = stoppedIds.has(a.id) || manuallyStopped.has(a.id);
+      const isMuted   = isAlarming && !isFiring && !isStopped;
 
-    sorted.forEach(a => {
       const t = document.createElement('span');
-      t.className = 'alarm-tag' + (firingIds.has(a.id) ? ' firing' : '');
+      let cls = 'alarm-tag';
+      if (isFiring)       cls += ' firing';
+      else if (isStopped) cls += ' dimmed';
+      else if (isMuted)   cls += ' muted';
+      t.className = cls;
       t.textContent = '🔔 ' + a.time;
       tagsEl.appendChild(t);
     });
@@ -568,12 +620,20 @@
       const inp = document.createElement('input');
       inp.type = 'time';
       inp.value = a.time;
-      inp.addEventListener('change', () => { a.time = inp.value; firingIds.delete(a.id); renderTags(); });
+      inp.addEventListener('change', () => {
+        a.time = inp.value;
+        firingIds.delete(a.id);
+        sortAlarms(); renderTags();
+      });
 
       const uid = 'chk-' + a.id;
       const chk = document.createElement('input');
       chk.type = 'checkbox'; chk.id = uid; chk.checked = a.enabled;
-      chk.addEventListener('change', () => { a.enabled = chk.checked; if (!a.enabled) firingIds.delete(a.id); renderTags(); });
+      chk.addEventListener('change', () => {
+        a.enabled = chk.checked;
+        if (!a.enabled) firingIds.delete(a.id);
+        sortAlarms(); renderTags();
+      });
 
       const lbl = document.createElement('label');
       lbl.htmlFor = uid;
@@ -585,7 +645,8 @@
       del.addEventListener('click', () => {
         alarms = alarms.filter(x => x.id !== a.id);
         firingIds.delete(a.id);
-        renderList(); renderTags();
+        stoppedIds.delete(a.id);
+        renderList(); sortAlarms(); renderTags();
       });
 
       row.appendChild(inp); row.appendChild(lbl); row.appendChild(del);
@@ -599,7 +660,7 @@
   addBtn.addEventListener('click', () => {
     if (alarms.length >= MAX) return;
     alarms.push({ id: nextId++, time: '07:00', enabled: true });
-    renderList(); renderTags();
+    renderList(); sortAlarms(); renderTags();
     alarmList.scrollTop = alarmList.scrollHeight;
   });
 
@@ -690,7 +751,7 @@
     setTimeout(schedule, 2000 + Math.random() * 3000);
   })();
 
-  renderTags(); tick();
+  sortAlarms(); renderTags(); tick();
   setInterval(tick, 1000);
 })();
 </script>
